@@ -1,0 +1,33 @@
+name: SwiftDataCloudSyncKitDemo
+options:
+  minimumXcodeGenVersion: 2.38.0
+  deploymentTarget:
+    iOS: "17.0"
+
+packages:
+  SwiftDataCloudSyncKit:
+    path: ..
+
+targets:
+  SwiftDataCloudSyncKitDemo:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: SwiftDataCloudSyncKit
+        product: SwiftDataCloudSyncKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mbc.SwiftDataCloudSyncKitDemo
+        PRODUCT_NAME: SwiftDataCloudSyncKitDemo
+        SWIFT_VERSION: 5.9
+        TARGETED_DEVICE_FAMILY: "1,2"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: SwiftDataCloudSyncKitDemo
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        SUPPORTS_MACCATALYST: NO
