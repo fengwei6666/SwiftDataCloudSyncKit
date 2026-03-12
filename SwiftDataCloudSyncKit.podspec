@@ -6,10 +6,10 @@ Pod::Spec.new do |s|
 A reusable SwiftData sync library with optional CloudKit support, sync monitoring,
 retry execution and offline operation queue.
   DESC
-  s.homepage         = 'https://github.com/your-org/SwiftDataCloudSyncKit'
+  s.homepage         = 'https://github.com/fengwei6666/SwiftDataCloudSyncKit'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { 'Maintainers' => 'maintainers@example.com' }
-  s.source           = { :git => 'https://github.com/your-org/SwiftDataCloudSyncKit.git', :tag => s.version.to_s }
+  s.source           = { :git => 'https://github.com/fengwei6666/SwiftDataCloudSyncKit.git', :tag => s.version.to_s }
 
   s.platform         = :ios, '17.0'
   s.swift_versions   = ['5.9']
