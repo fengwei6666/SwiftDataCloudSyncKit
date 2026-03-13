@@ -2,22 +2,22 @@
 
 [中文文档](./README.zh-CN.md)
 
-A decoupled SwiftData synchronization toolkit with optional CloudKit support.
+A lightweight SwiftData sync toolkit built on top of native CloudKit integration.
 
 ## Features
 
 - Local-only mode (`CloudSyncMode.disabled`)
 - Optional CloudKit mode (`CloudSyncMode.enabled(cloudKitDatabase:)`)
-- Data access mode (`DataAccessMode.localOnly` recommended)
-- Runtime cloud sync on/off switch (`setCloudSyncEnabled`)
+- Runtime cloud sync on/off (`setCloudSyncEnabled`)
+- Native single-container architecture with automatic container recreation on toggle
+- Mixed storage support: `syncedTypes` (CloudKit) + `localOnlyTypes` (device-only)
+- Optional cloud event filtering (`cloudEventFilter`) for multi-container apps
 - Sync event monitoring (`CloudSyncMonitor`)
-- Retry utility (`RetryExecutor`)
-- Offline operation queue (`OfflineOperationQueue`)
-- Sync issue diagnostics (`SyncDiagnosticsAdvisor`)
+- Sync diagnostics (`SyncDiagnosticsAdvisor`)
 
 ## Requirements
 
-- iOS 17.0+
+- iOS 17.0+ / macOS 14.0+
 - Swift 5.9+
 - Xcode 15+
 
@@ -62,77 +62,53 @@ import SwiftDataCloudSyncKit
 
 let settingsStore = UserDefaultsCloudSyncSettingsStore(
     key: "myAppCloudSyncEnabled",
-    defaultValue: false
+    defaultValue: true
 )
 
-let configuration = SwiftDataCloudSyncConfiguration(
-    schema: Schema([Work.self, ThumbnailAsset.self]),
+let configuration = NativeCloudSyncConfiguration(
+    syncedTypes: [Work.self, UserProfile.self],
+    cloudStoreName: "AppCloudStore",
     cloudSyncMode: .enabled(cloudKitDatabase: .automatic),
-    dataAccessMode: .localOnly,
-    settingsStore: settingsStore,
-    localToCloudSyncHandler: { localContainer, cloudContainer in
-        // Implement your local->cloud upsert logic.
-    }
+    localOnlyTypes: [Draft.self],
+    localStoreName: "AppLocalStore",
+    settingsStore: settingsStore
 )
 
-let engine = SwiftDataCloudSyncEngine(configuration: configuration)
+let engine = NativeCloudSyncEngine(configuration: configuration)
 try engine.setup()
 
-// Business reads/writes should use local context.
-let context = engine.modelContext
+guard let context = engine.modelContext else { return }
 let monitor = engine.syncMonitor
 ```
-
-## Data Access Modes
-
-```swift
-DataAccessMode.localOnly
-```
-
-- Recommended.
-- `modelContext` always points to local store.
-- Cloud container is used for sync only.
-
-```swift
-DataAccessMode.switchWithCloudSync
-```
-
-- Compatibility mode.
-- `modelContext` switches with cloud sync state.
-- Higher risk of context-level split-brain if app logic is not carefully designed.
 
 ## Local-only Mode
 
 ```swift
-let configuration = SwiftDataCloudSyncConfiguration(
-    schema: Schema([Work.self, ThumbnailAsset.self]),
+let configuration = NativeCloudSyncConfiguration(
+    syncedTypes: [Work.self, UserProfile.self],
     cloudSyncMode: .disabled,
-    dataAccessMode: .localOnly,
     settingsStore: InMemoryCloudSyncSettingsStore(isCloudSyncEnabled: false)
 )
 ```
 
-In this mode, no CloudKit container is created.
+In this mode, the synced store is created without CloudKit.
 
 ## Runtime Cloud Toggle
 
 ```swift
-Task {
-    do {
-        try await engine.setCloudSyncEnabled(true)
-    } catch {
-        print(error.localizedDescription)
-    }
+do {
+    try engine.setCloudSyncEnabled(true)
+} catch {
+    print(error.localizedDescription)
 }
 ```
 
-If the configuration is `.disabled`, enabling throws `SwiftDataCloudSyncEngineError.cloudSyncNotAvailable`.
+If `cloudSyncMode` is `.disabled`, enabling at runtime throws `CloudSyncEngineError.cloudSyncNotAvailable`.
 
 ## Monitoring and Diagnostics
 
 ```swift
 let monitor = engine.syncMonitor
-monitor.triggerSync()
 
 if let error = monitor.syncError {
     let issue = SyncDiagnosticsAdvisor.classify(error: error)
@@ -141,18 +117,42 @@ if let error = monitor.syncError {
 }
 ```
 
+Note: this library observes system CloudKit events; there is no manual `triggerSync()` API.
+
+## SwiftUI Integration
+
+```swift
+@StateObject private var engine = NativeCloudSyncEngine(configuration: configuration)
+
+var body: some Scene {
+    WindowGroup {
+        Group {
+            if let container = engine.container {
+                ContentView()
+                    .modelContainer(container)
+                    .id(ObjectIdentifier(container))
+            } else {
+                ProgressView()
+            }
+        }
+        .task { try? engine.setup() }
+    }
+}
+```
+
 ## Public Core Types
 
-- `SwiftDataCloudSyncEngine`
-- `SwiftDataCloudSyncConfiguration`
+- `CloudSyncEngine`
+- `NativeCloudSyncEngine`
+- `NativeCloudSyncConfiguration`
+- `CloudSyncEngineError`
 - `CloudSyncMode`
-- `DataAccessMode`
 - `CloudSyncMonitor`
 - `CloudSyncSettingsStore`
 - `UserDefaultsCloudSyncSettingsStore`
 - `InMemoryCloudSyncSettingsStore`
-- `RetryExecutor`
-- `OfflineOperationQueue`
+- `CloudSyncError`
+- `SyncIssueKind`
 - `SyncDiagnosticsAdvisor`
 
 ## License

@@ -9,7 +9,8 @@ public protocol CloudSyncEngine: AnyObject {
     var isCloudSyncEnabled: Bool { get }
     var isReady: Bool { get }
     /// Business-facing context. Stable across calls; recreated after container changes.
-    var modelContext: ModelContext { get }
+    /// Returns `nil` until `setup()` completes successfully.
+    var modelContext: ModelContext? { get }
     var syncMonitor: CloudSyncMonitor { get }
     /// Emits the current container immediately on subscription, then again on every swap.
     var containerPublisher: AnyPublisher<ModelContainer, Never> { get }
@@ -17,6 +18,6 @@ public protocol CloudSyncEngine: AnyObject {
     var isCloudSyncEnabledPublisher: AnyPublisher<Bool, Never> { get }
 
     func setup() throws
-    func setCloudSyncEnabled(_ enabled: Bool) async throws
+    func setCloudSyncEnabled(_ enabled: Bool) throws
     func stopMonitoring()
 }

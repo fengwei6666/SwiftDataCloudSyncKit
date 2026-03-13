@@ -2,22 +2,22 @@
 
 [English README](./README.md)
 
-一个解耦的 SwiftData 同步工具库，支持可选 CloudKit。
+一个基于 SwiftData 原生 CloudKit 集成的轻量同步工具库。
 
 ## 功能特性
 
 - 纯本地模式（`CloudSyncMode.disabled`）
 - 可选 CloudKit 模式（`CloudSyncMode.enabled(cloudKitDatabase:)`）
-- 数据访问模式（推荐 `DataAccessMode.localOnly`）
 - 运行时开关云同步（`setCloudSyncEnabled`）
+- 原生单容器架构，切换开关时自动重建容器
+- 混合存储：`syncedTypes`（走 CloudKit）+ `localOnlyTypes`（仅本地）
+- 可选云事件过滤（`cloudEventFilter`），适用于多容器场景
 - 同步事件监控（`CloudSyncMonitor`）
-- 重试执行器（`RetryExecutor`）
-- 离线操作队列（`OfflineOperationQueue`）
 - 同步问题诊断（`SyncDiagnosticsAdvisor`）
 
 ## 环境要求
 
-- iOS 17.0+
+- iOS 17.0+ / macOS 14.0+
 - Swift 5.9+
 - Xcode 15+
 
@@ -62,77 +62,53 @@ import SwiftDataCloudSyncKit
 
 let settingsStore = UserDefaultsCloudSyncSettingsStore(
     key: "myAppCloudSyncEnabled",
-    defaultValue: false
+    defaultValue: true
 )
 
-let configuration = SwiftDataCloudSyncConfiguration(
-    schema: Schema([Work.self, ThumbnailAsset.self]),
+let configuration = NativeCloudSyncConfiguration(
+    syncedTypes: [Work.self, UserProfile.self],
+    cloudStoreName: "AppCloudStore",
     cloudSyncMode: .enabled(cloudKitDatabase: .automatic),
-    dataAccessMode: .localOnly,
-    settingsStore: settingsStore,
-    localToCloudSyncHandler: { localContainer, cloudContainer in
-        // 在这里实现本地到云端的 upsert 逻辑
-    }
+    localOnlyTypes: [Draft.self],
+    localStoreName: "AppLocalStore",
+    settingsStore: settingsStore
 )
 
-let engine = SwiftDataCloudSyncEngine(configuration: configuration)
+let engine = NativeCloudSyncEngine(configuration: configuration)
 try engine.setup()
 
-// 业务读写统一走本地 context。
-let context = engine.modelContext
+guard let context = engine.modelContext else { return }
 let monitor = engine.syncMonitor
 ```
-
-## 数据访问模式
-
-```swift
-DataAccessMode.localOnly
-```
-
-- 推荐模式
-- `modelContext` 永远指向本地库
-- 云容器仅用于同步
-
-```swift
-DataAccessMode.switchWithCloudSync
-```
-
-- 兼容模式
-- `modelContext` 会随云开关切换
-- 若业务层处理不当，存在 context 级分叉风险
 
 ## 纯本地模式
 
 ```swift
-let configuration = SwiftDataCloudSyncConfiguration(
-    schema: Schema([Work.self, ThumbnailAsset.self]),
+let configuration = NativeCloudSyncConfiguration(
+    syncedTypes: [Work.self, UserProfile.self],
     cloudSyncMode: .disabled,
-    dataAccessMode: .localOnly,
     settingsStore: InMemoryCloudSyncSettingsStore(isCloudSyncEnabled: false)
 )
 ```
 
-该模式下不会创建 CloudKit 容器。
+该模式下，同步库会创建不带 CloudKit 的本地存储。
 
 ## 运行时切换云同步
 
 ```swift
-Task {
-    do {
-        try await engine.setCloudSyncEnabled(true)
-    } catch {
-        print(error.localizedDescription)
-    }
+do {
+    try engine.setCloudSyncEnabled(true)
+} catch {
+    print(error.localizedDescription)
 }
 ```
 
-如果配置是 `.disabled`，启用时会抛出 `SwiftDataCloudSyncEngineError.cloudSyncNotAvailable`。
+如果 `cloudSyncMode` 是 `.disabled`，运行时启用会抛出 `CloudSyncEngineError.cloudSyncNotAvailable`。
 
 ## 监控与诊断
 
 ```swift
 let monitor = engine.syncMonitor
-monitor.triggerSync()
 
 if let error = monitor.syncError {
     let issue = SyncDiagnosticsAdvisor.classify(error: error)
@@ -141,18 +117,42 @@ if let error = monitor.syncError {
 }
 ```
 
+说明：本库通过系统 CloudKit 事件监听同步状态，不提供手动 `triggerSync()` API。
+
+## SwiftUI 集成
+
+```swift
+@StateObject private var engine = NativeCloudSyncEngine(configuration: configuration)
+
+var body: some Scene {
+    WindowGroup {
+        Group {
+            if let container = engine.container {
+                ContentView()
+                    .modelContainer(container)
+                    .id(ObjectIdentifier(container))
+            } else {
+                ProgressView()
+            }
+        }
+        .task { try? engine.setup() }
+    }
+}
+```
+
 ## 核心公开类型
 
-- `SwiftDataCloudSyncEngine`
-- `SwiftDataCloudSyncConfiguration`
+- `CloudSyncEngine`
+- `NativeCloudSyncEngine`
+- `NativeCloudSyncConfiguration`
+- `CloudSyncEngineError`
 - `CloudSyncMode`
-- `DataAccessMode`
 - `CloudSyncMonitor`
 - `CloudSyncSettingsStore`
 - `UserDefaultsCloudSyncSettingsStore`
 - `InMemoryCloudSyncSettingsStore`
-- `RetryExecutor`
-- `OfflineOperationQueue`
+- `CloudSyncError`
+- `SyncIssueKind`
 - `SyncDiagnosticsAdvisor`
 
 ## 许可证

@@ -72,28 +72,25 @@ final class DemoStore: ObservableObject {
             log("CloudKit capability is disabled in current mode")
             return
         }
-        Task {
-            do {
-                try await engine.setCloudSyncEnabled(enabled)
-                await MainActor.run {
-                    self.isCloudSyncEnabled = engine.isCloudSyncEnabled
-                    self.syncErrorMessage = nil
-                    self.refreshDiagnostics()
-                    self.log("Cloud sync switched to \(self.isCloudSyncEnabled)")
-                }
-            } catch {
-                await MainActor.run {
-                    self.syncErrorMessage = error.localizedDescription
-                    self.refreshDiagnostics()
-                    self.log("Cloud switch failed: \(error.localizedDescription)")
-                }
-            }
+        do {
+            try engine.setCloudSyncEnabled(enabled)
+            isCloudSyncEnabled = engine.isCloudSyncEnabled
+            syncErrorMessage = nil
+            refreshDiagnostics()
+            log("Cloud sync switched to \(isCloudSyncEnabled)")
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            refreshDiagnostics()
+            log("Cloud switch failed: \(error.localizedDescription)")
         }
     }
 
     func addSampleWork() {
         guard let engine else { log("Engine not ready"); return }
-        let context = engine.modelContext
+        guard let context = engine.modelContext else {
+            log("Model context is not ready")
+            return
+        }
         let item = DemoWork(
             name: "Demo \(Int.random(in: 1000...9999))",
             notes: "Created at \(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium))"
@@ -112,11 +109,16 @@ final class DemoStore: ObservableObject {
 
     func reloadWorks() {
         guard let engine else { works = []; return }
+        guard let context = engine.modelContext else {
+            works = []
+            log("Model context is not ready")
+            return
+        }
         do {
             let descriptor = FetchDescriptor<DemoWork>(
                 sortBy: [SortDescriptor(\DemoWork.updatedAt, order: .reverse)]
             )
-            works = try engine.modelContext.fetch(descriptor)
+            works = try context.fetch(descriptor)
             log("Reloaded works count=\(works.count)")
         } catch {
             syncErrorMessage = error.localizedDescription

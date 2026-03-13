@@ -53,6 +53,9 @@ public struct NativeCloudSyncConfiguration {
     public var settingsStore: CloudSyncSettingsStore
     /// Optional logger for engine lifecycle messages.
     public var logger: ((String) -> Void)?
+    /// Optional CloudKit event filter by `storeIdentifier`.
+    /// Use this when your app has multiple CloudKit-backed containers in-process.
+    public var cloudEventFilter: ((String) -> Bool)?
 
     public init(
         syncedTypes: [any PersistentModel.Type],
@@ -61,7 +64,8 @@ public struct NativeCloudSyncConfiguration {
         localOnlyTypes: [any PersistentModel.Type] = [],
         localStoreName: String = "NativeLocalStore",
         settingsStore: CloudSyncSettingsStore,
-        logger: ((String) -> Void)? = nil
+        logger: ((String) -> Void)? = nil,
+        cloudEventFilter: ((String) -> Bool)? = nil
     ) {
         self.syncedTypes = syncedTypes
         self.cloudStoreName = cloudStoreName
@@ -70,6 +74,7 @@ public struct NativeCloudSyncConfiguration {
         self.localStoreName = localStoreName
         self.settingsStore = settingsStore
         self.logger = logger
+        self.cloudEventFilter = cloudEventFilter
     }
 }
 
@@ -126,11 +131,9 @@ public final class NativeCloudSyncEngine: ObservableObject, CloudSyncEngine {
 
     public var isReady: Bool { container != nil }
 
-    public var modelContext: ModelContext {
+    public var modelContext: ModelContext? {
         if let ctx = _modelContext { return ctx }
-        guard let container else {
-            fatalError("NativeCloudSyncEngine: call setup() before accessing modelContext")
-        }
+        guard let container else { return nil }
         let ctx = ModelContext(container)
         _modelContext = ctx
         return ctx
@@ -153,7 +156,10 @@ public final class NativeCloudSyncEngine: ObservableObject, CloudSyncEngine {
 
     public init(configuration: NativeCloudSyncConfiguration) {
         self.configuration = configuration
-        self.syncMonitor = CloudSyncMonitor(logger: configuration.logger)
+        self.syncMonitor = CloudSyncMonitor(
+            logger: configuration.logger,
+            cloudEventFilter: configuration.cloudEventFilter
+        )
         self.isCloudSyncEnabled = configuration.settingsStore.isCloudSyncEnabled
         syncMonitor.startMonitoring()
     }
@@ -170,7 +176,7 @@ public final class NativeCloudSyncEngine: ObservableObject, CloudSyncEngine {
 
     // MARK: Toggle
 
-    public func setCloudSyncEnabled(_ enabled: Bool) async throws {
+    public func setCloudSyncEnabled(_ enabled: Bool) throws {
         guard enabled != isCloudSyncEnabled else { return }
         if enabled, configuration.cloudSyncMode.cloudKitDatabase == nil {
             throw CloudSyncEngineError.cloudSyncNotAvailable
@@ -223,18 +229,7 @@ public final class NativeCloudSyncEngine: ObservableObject, CloudSyncEngine {
     private func refreshSyncMonitorBinding() {
         guard let container else { return }
         syncMonitor.setContainer(container)
-
-        if isCloudSyncEnabled && configuration.cloudSyncMode.cloudKitDatabase != nil {
-            let ids = container.persistentStoreIdentifiers
-            if ids.isEmpty {
-                log("Warning: could not extract store identifiers via reflection; cloud event filtering disabled")
-            }
-            syncMonitor.setActiveStoreIdentifiers(ids)
-            syncMonitor.setAcceptsCloudEvents(true)
-        } else {
-            syncMonitor.setActiveStoreIdentifiers([])
-            syncMonitor.setAcceptsCloudEvents(false)
-        }
+        syncMonitor.setAcceptsCloudEvents(isCloudSyncEnabled && configuration.cloudSyncMode.cloudKitDatabase != nil)
     }
 
     private func log(_ message: String) {
