@@ -117,6 +117,7 @@ final class DemoStore: ObservableObject {
                 localStoreName: "DemoLocalStore",
                 cloudStoreName: "DemoCloudStore",
                 cloudSyncMode: cloudCapable ? .enabled(cloudKitDatabase: .automatic) : .disabled,
+                dataAccessMode: .localOnly,
                 settingsStore: settingsStore,
                 localToCloudSyncHandler: { localContainer, cloudContainer in
                     try await DemoStore.syncLocalToCloud(

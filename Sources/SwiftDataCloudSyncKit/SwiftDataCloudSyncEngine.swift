@@ -57,6 +57,14 @@ public enum CloudSyncMode {
     }
 }
 
+// Controls where business read/write context points to.
+public enum DataAccessMode {
+    // Recommended: business context always local; cloud is sync-only.
+    case localOnly
+    // Compatibility mode: business context switches to cloud when enabled.
+    case switchWithCloudSync
+}
+
 public struct SwiftDataCloudSyncConfiguration {
     public typealias LocalToCloudSyncHandler = @Sendable (_ local: ModelContainer, _ cloud: ModelContainer) async throws -> Void
 
@@ -64,6 +72,7 @@ public struct SwiftDataCloudSyncConfiguration {
     public var localStoreName: String
     public var cloudStoreName: String
     public var cloudSyncMode: CloudSyncMode
+    public var dataAccessMode: DataAccessMode
     public var settingsStore: CloudSyncSettingsStore
     public var localToCloudSyncHandler: LocalToCloudSyncHandler?
     public var logger: ((String) -> Void)?
@@ -73,6 +82,7 @@ public struct SwiftDataCloudSyncConfiguration {
         localStoreName: String = "LocalStore",
         cloudStoreName: String = "CloudStore",
         cloudSyncMode: CloudSyncMode = .enabled(cloudKitDatabase: .automatic),
+        dataAccessMode: DataAccessMode = .localOnly,
         settingsStore: CloudSyncSettingsStore,
         localToCloudSyncHandler: LocalToCloudSyncHandler? = nil,
         logger: ((String) -> Void)? = nil
@@ -81,6 +91,7 @@ public struct SwiftDataCloudSyncConfiguration {
         self.localStoreName = localStoreName
         self.cloudStoreName = cloudStoreName
         self.cloudSyncMode = cloudSyncMode
+        self.dataAccessMode = dataAccessMode
         self.settingsStore = settingsStore
         self.localToCloudSyncHandler = localToCloudSyncHandler
         self.logger = logger
@@ -114,8 +125,22 @@ public final class SwiftDataCloudSyncEngine: ObservableObject {
         localContainer != nil
     }
 
+    // Business-facing context. In localOnly mode this is always local.
     public var modelContext: ModelContext {
-        ModelContext(currentContainer)
+        ModelContext(primaryReadWriteContainer)
+    }
+
+    // Explicit contexts for advanced scenarios.
+    public var localModelContext: ModelContext {
+        guard let localContainer else {
+            fatalError("local container not ready")
+        }
+        return ModelContext(localContainer)
+    }
+
+    public var cloudModelContext: ModelContext? {
+        guard let cloudContainer else { return nil }
+        return ModelContext(cloudContainer)
     }
 
     public func setup() throws {
@@ -156,6 +181,11 @@ public final class SwiftDataCloudSyncEngine: ObservableObject {
     public func updateConfiguration(_ update: (inout SwiftDataCloudSyncConfiguration) -> Void) {
         update(&configuration)
         isCloudSyncEnabled = configuration.settingsStore.isCloudSyncEnabled
+
+        if shouldUseCloudContainer, cloudContainer == nil {
+            try? ensureCloudContainerReady()
+        }
+
         refreshSyncMonitorBinding()
     }
 
@@ -163,11 +193,16 @@ public final class SwiftDataCloudSyncEngine: ObservableObject {
         syncMonitor.stopMonitoring()
     }
 
-    private var currentContainer: ModelContainer {
-        if shouldUseCloudContainer, let cloudContainer {
-            return cloudContainer
+    private var primaryReadWriteContainer: ModelContainer {
+        switch configuration.dataAccessMode {
+        case .localOnly:
+            return localContainer!
+        case .switchWithCloudSync:
+            if shouldUseCloudContainer, let cloudContainer {
+                return cloudContainer
+            }
+            return localContainer!
         }
-        return localContainer!
     }
 
     private var shouldUseCloudContainer: Bool {
@@ -191,16 +226,15 @@ public final class SwiftDataCloudSyncEngine: ObservableObject {
     private func refreshSyncMonitorBinding() {
         guard let localContainer else { return }
 
-        let activeContainer: ModelContainer
-        if shouldUseCloudContainer, let cloudContainer {
-            activeContainer = cloudContainer
-        } else {
-            activeContainer = localContainer
-        }
+        syncMonitor.setContainer(localContainer)
 
-        syncMonitor.setContainer(activeContainer)
-        syncMonitor.setActiveStoreIdentifiers(storeIdentifiers(for: activeContainer))
-        syncMonitor.setAcceptsCloudEvents(shouldUseCloudContainer)
+        if shouldUseCloudContainer, let cloudContainer {
+            syncMonitor.setActiveStoreIdentifiers(storeIdentifiers(for: cloudContainer))
+            syncMonitor.setAcceptsCloudEvents(true)
+        } else {
+            syncMonitor.setActiveStoreIdentifiers([])
+            syncMonitor.setAcceptsCloudEvents(false)
+        }
     }
 
     private func performManualSync() async throws {

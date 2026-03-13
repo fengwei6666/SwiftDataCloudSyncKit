@@ -8,6 +8,7 @@ A decoupled SwiftData synchronization toolkit with optional CloudKit support.
 
 - Local-only mode (`CloudSyncMode.disabled`)
 - Optional CloudKit mode (`CloudSyncMode.enabled(cloudKitDatabase:)`)
+- Data access mode (`DataAccessMode.localOnly` recommended)
 - Runtime cloud sync on/off switch (`setCloudSyncEnabled`)
 - Sync event monitoring (`CloudSyncMonitor`)
 - Retry utility (`RetryExecutor`)
@@ -67,6 +68,7 @@ let settingsStore = UserDefaultsCloudSyncSettingsStore(
 let configuration = SwiftDataCloudSyncConfiguration(
     schema: Schema([Work.self, ThumbnailAsset.self]),
     cloudSyncMode: .enabled(cloudKitDatabase: .automatic),
+    dataAccessMode: .localOnly,
     settingsStore: settingsStore,
     localToCloudSyncHandler: { localContainer, cloudContainer in
         // Implement your local->cloud upsert logic.
@@ -76,9 +78,28 @@ let configuration = SwiftDataCloudSyncConfiguration(
 let engine = SwiftDataCloudSyncEngine(configuration: configuration)
 try engine.setup()
 
+// Business reads/writes should use local context.
 let context = engine.modelContext
 let monitor = engine.syncMonitor
 ```
+
+## Data Access Modes
+
+```swift
+DataAccessMode.localOnly
+```
+
+- Recommended.
+- `modelContext` always points to local store.
+- Cloud container is used for sync only.
+
+```swift
+DataAccessMode.switchWithCloudSync
+```
+
+- Compatibility mode.
+- `modelContext` switches with cloud sync state.
+- Higher risk of context-level split-brain if app logic is not carefully designed.
 
 ## Local-only Mode
 
@@ -86,6 +107,7 @@ let monitor = engine.syncMonitor
 let configuration = SwiftDataCloudSyncConfiguration(
     schema: Schema([Work.self, ThumbnailAsset.self]),
     cloudSyncMode: .disabled,
+    dataAccessMode: .localOnly,
     settingsStore: InMemoryCloudSyncSettingsStore(isCloudSyncEnabled: false)
 )
 ```
@@ -124,6 +146,7 @@ if let error = monitor.syncError {
 - `SwiftDataCloudSyncEngine`
 - `SwiftDataCloudSyncConfiguration`
 - `CloudSyncMode`
+- `DataAccessMode`
 - `CloudSyncMonitor`
 - `CloudSyncSettingsStore`
 - `UserDefaultsCloudSyncSettingsStore`

@@ -8,6 +8,7 @@
 
 - 纯本地模式（`CloudSyncMode.disabled`）
 - 可选 CloudKit 模式（`CloudSyncMode.enabled(cloudKitDatabase:)`）
+- 数据访问模式（推荐 `DataAccessMode.localOnly`）
 - 运行时开关云同步（`setCloudSyncEnabled`）
 - 同步事件监控（`CloudSyncMonitor`）
 - 重试执行器（`RetryExecutor`）
@@ -67,6 +68,7 @@ let settingsStore = UserDefaultsCloudSyncSettingsStore(
 let configuration = SwiftDataCloudSyncConfiguration(
     schema: Schema([Work.self, ThumbnailAsset.self]),
     cloudSyncMode: .enabled(cloudKitDatabase: .automatic),
+    dataAccessMode: .localOnly,
     settingsStore: settingsStore,
     localToCloudSyncHandler: { localContainer, cloudContainer in
         // 在这里实现本地到云端的 upsert 逻辑
@@ -76,9 +78,28 @@ let configuration = SwiftDataCloudSyncConfiguration(
 let engine = SwiftDataCloudSyncEngine(configuration: configuration)
 try engine.setup()
 
+// 业务读写统一走本地 context。
 let context = engine.modelContext
 let monitor = engine.syncMonitor
 ```
+
+## 数据访问模式
+
+```swift
+DataAccessMode.localOnly
+```
+
+- 推荐模式
+- `modelContext` 永远指向本地库
+- 云容器仅用于同步
+
+```swift
+DataAccessMode.switchWithCloudSync
+```
+
+- 兼容模式
+- `modelContext` 会随云开关切换
+- 若业务层处理不当，存在 context 级分叉风险
 
 ## 纯本地模式
 
@@ -86,6 +107,7 @@ let monitor = engine.syncMonitor
 let configuration = SwiftDataCloudSyncConfiguration(
     schema: Schema([Work.self, ThumbnailAsset.self]),
     cloudSyncMode: .disabled,
+    dataAccessMode: .localOnly,
     settingsStore: InMemoryCloudSyncSettingsStore(isCloudSyncEnabled: false)
 )
 ```
@@ -124,6 +146,7 @@ if let error = monitor.syncError {
 - `SwiftDataCloudSyncEngine`
 - `SwiftDataCloudSyncConfiguration`
 - `CloudSyncMode`
+- `DataAccessMode`
 - `CloudSyncMonitor`
 - `CloudSyncSettingsStore`
 - `UserDefaultsCloudSyncSettingsStore`
