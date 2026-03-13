@@ -10,9 +10,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     engineSection
                     syncSection
-                    conflictSection
                     dataSection
-                    toolsSection
                     diagnosticsSection
                     logsSection
                 }
@@ -65,48 +63,6 @@ struct ContentView: View {
                 Text("progress: \(Int(store.syncProgress * 100))%")
                 Text("lastSyncDate: \(formatDate(store.lastSyncDate))")
                 Text("syncError: \(store.syncErrorMessage ?? "none")")
-
-                Button("Trigger Manual Sync") {
-                    store.triggerManualSync()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!store.isEngineReady)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var conflictSection: some View {
-        GroupBox("Conflict Debug") {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    Button("Inject Cloud-Newer + Sync") {
-                        store.injectCloudNewerConflictAndSync()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!store.isEngineReady || !store.isCloudSyncEnabled)
-
-                    Button("Inject Cloud-Duplicates + Sync") {
-                        store.injectCloudDuplicatesAndSync()
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!store.isEngineReady || !store.isCloudSyncEnabled)
-                }
-
-                Button("Refresh Sync Stats") {
-                    store.refreshLatestSyncStats()
-                }
-                .buttonStyle(.bordered)
-
-                Text("stats.finishedAt: \(formatDate(store.syncStats.finishedAt))")
-                Text("stats.localCount: \(store.syncStats.localCount)")
-                Text("stats.inserted: \(store.syncStats.inserted)")
-                Text("stats.updated: \(store.syncStats.updated)")
-                Text("stats.skipped(Cloud newer): \(store.syncStats.skipped)")
-                Text("stats.deduplicated: \(store.syncStats.deduplicated)")
-                Text("stats.injectedCloudNewer: \(store.syncStats.injectedCloudNewer ? "true" : "false")")
-                Text("stats.injectedCloudDuplicates: \(store.syncStats.injectedCloudDuplicates)")
-                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -142,32 +98,6 @@ struct ContentView: View {
                     .background(Color(.secondarySystemBackground))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var toolsSection: some View {
-        GroupBox("Retry & Offline Queue") {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Offline queue count: \(store.offlineQueueCount)")
-
-                HStack(spacing: 10) {
-                    Button("Add Offline Op") {
-                        store.addOfflineOperation()
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button("Clear Offline Ops") {
-                        store.clearOfflineOperations()
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-                Button("Run Retry Demo") {
-                    store.runRetryDemo()
-                }
-                .buttonStyle(.borderedProminent)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

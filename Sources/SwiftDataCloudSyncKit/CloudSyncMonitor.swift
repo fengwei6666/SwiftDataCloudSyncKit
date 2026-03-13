@@ -4,6 +4,7 @@ import SwiftData
 import CloudKit
 import Combine
 
+@MainActor
 public final class CloudSyncMonitor: ObservableObject {
 
     @Published public private(set) var isSyncing: Bool = false
@@ -12,8 +13,6 @@ public final class CloudSyncMonitor: ObservableObject {
     @Published public private(set) var syncProgress: Double = 0.0
 
     private var cloudEventObserver: NSObjectProtocol?
-    private var manualSyncTimeoutTask: Task<Void, Never>?
-    private var manualSyncHandler: (() async throws -> Void)?
     private weak var container: ModelContainer?
     private var activeStoreIdentifiers: Set<String> = []
     private var acceptsCloudEvents: Bool = true
@@ -28,10 +27,6 @@ public final class CloudSyncMonitor: ObservableObject {
         log("SyncMonitor bind container")
     }
 
-    public func setManualSyncHandler(_ handler: @escaping () async throws -> Void) {
-        manualSyncHandler = handler
-    }
-
     public func setActiveStoreIdentifiers(_ identifiers: Set<String>) {
         activeStoreIdentifiers = identifiers
     }
@@ -42,7 +37,6 @@ public final class CloudSyncMonitor: ObservableObject {
 
     public func startMonitoring() {
         guard cloudEventObserver == nil else { return }
-
         cloudEventObserver = NotificationCenter.default.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
@@ -59,42 +53,13 @@ public final class CloudSyncMonitor: ObservableObject {
             NotificationCenter.default.removeObserver(cloudEventObserver)
         }
         cloudEventObserver = nil
-        manualSyncTimeoutTask?.cancel()
-        manualSyncTimeoutTask = nil
-    }
-
-    public func triggerSync() {
-        syncError = nil
-        isSyncing = true
-        syncProgress = 0.0
-
-        guard let manualSyncHandler else {
-            syncError = CloudSyncMonitorError.syncHandlerNotConfigured
-            isSyncing = false
-            return
-        }
-
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await manualSyncHandler()
-                await self.handleManualSyncTriggered()
-            } catch {
-                await self.handleManualSyncFailed(error)
-            }
-        }
     }
 
     private func handleSyncEvent(_ notification: Notification) {
+        guard acceptsCloudEvents else { return }
         guard let event = notification.userInfo?[
             NSPersistentCloudKitContainer.eventNotificationUserInfoKey
-        ] as? NSPersistentCloudKitContainer.Event else {
-            return
-        }
-
-        if !acceptsCloudEvents {
-            return
-        }
+        ] as? NSPersistentCloudKitContainer.Event else { return }
 
         if !activeStoreIdentifiers.isEmpty,
            !activeStoreIdentifiers.contains(event.storeIdentifier) {
@@ -103,8 +68,7 @@ public final class CloudSyncMonitor: ObservableObject {
 
         switch event.type {
         case .setup:
-            isSyncing = false
-            syncProgress = 0.0
+            break
         case .import, .export:
             if event.endDate == nil {
                 isSyncing = true
@@ -118,9 +82,6 @@ public final class CloudSyncMonitor: ObservableObject {
     }
 
     private func finishSync(with event: NSPersistentCloudKitContainer.Event) {
-        manualSyncTimeoutTask?.cancel()
-        manualSyncTimeoutTask = nil
-
         isSyncing = false
         syncProgress = event.succeeded ? 1.0 : 0.0
 
@@ -133,47 +94,7 @@ public final class CloudSyncMonitor: ObservableObject {
         }
     }
 
-    private func scheduleManualSyncTimeout() {
-        manualSyncTimeoutTask?.cancel()
-        manualSyncTimeoutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            guard let self else { return }
-            await self.handleManualSyncTimeout()
-        }
-    }
-
-    @MainActor
-    private func handleManualSyncTriggered() {
-        syncProgress = max(syncProgress, 0.1)
-        scheduleManualSyncTimeout()
-    }
-
-    @MainActor
-    private func handleManualSyncFailed(_ error: Error) {
-        syncError = error
-        isSyncing = false
-        syncProgress = 0.0
-    }
-
-    @MainActor
-    private func handleManualSyncTimeout() {
-        guard isSyncing else { return }
-        isSyncing = false
-        syncProgress = 0.0
-    }
-
     private func log(_ message: String) {
         logger?(message)
-    }
-}
-
-public enum CloudSyncMonitorError: LocalizedError {
-    case syncHandlerNotConfigured
-
-    public var errorDescription: String? {
-        switch self {
-        case .syncHandlerNotConfigured:
-            return "Sync handler is not configured"
-        }
     }
 }
